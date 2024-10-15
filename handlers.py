@@ -1,16 +1,30 @@
-from telebot import types
-from kb import get_news_categories_keyboard
-from news_aggregator import get_news_by_category
+from telethon import TelegramClient
+from telethon.tl.functions.messages import GetHistoryRequest
+from config import API_ID, API_HASH
+from database import Database
 
+# Создание клиента
+client = TelegramClient('session_name', API_ID, API_HASH)
+db = Database()
 
-def register_handlers(bot):
-    @bot.message_handler(commands=['start'])
-    def handle_start(message):
-        bot.send_message(message.chat.id, "Привет! Выбери категорию новостей:", reply_markup=get_news_categories_keyboard())
+async def fetch_messages(channel_username):
+    async with client:
+        # Получаем историю сообщений из канала
+        channel = await client.get_entity(channel_username)
+        history = await client(GetHistoryRequest(
+            peer=channel,
+            limit=10,  # Количество сообщений для получения
+        ))
+        messages = []
+        for message in history.messages:
+            messages.append(f"**{message.sender_id}:** {message.message}\n")
+        return messages
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('news_'))
-    def handle_news_category(call):
-        category = call.data.split('_')[1]
-        news = get_news_by_category(category)
-        for item in news:
-            bot.send_message(call.message.chat.id, f"{item['title']}\n{item['url']}")
+async def add_channel(user_id, channel_username):
+    db.add_channel(user_id, channel_username)
+
+async def list_channels(user_id):
+    return db.get_channels(user_id)
+
+async def remove_channel(user_id, channel_username):
+    db.remove_channel(user_id, channel_username)
