@@ -1,25 +1,34 @@
 import time
-from rss_reader import get_rss_feed
-from handlers import bot
-from database import Database
-
-
-db = Database('rss_channels.json')
+from datetime import datetime
+from rss_reader import get_rss_feed, load_last_check_time, save_last_check_time
+from handlers import bot, db
 
 
 def check_rss_feeds():
+    last_check_time = load_last_check_time()
     while True:
-        for user_id in db.data.keys():
-            channels = db.get_channels(user_id)
+        # Получаем всех пользователей и их каналы из базы данных
+        users = db.get_all_users_and_channels()
+
+        for user_id, channels in users:
             for channel in channels:
-                articles = get_rss_feed(channel)
+                articles = get_rss_feed(channel)  # Получаем RSS-ленту для канала
                 for article in articles:
-                    # Отправляем сообщения, если они новые
-                    bot.send_message(user_id, f"{article['title']}\n{article['link']}")
-        time.sleep(300)  # Проверять каждые 5 минут
+
+                    # Отправляем новые статьи
+                    published_time = datetime.strptime(article['published'], '%Y-%m-%dT%H:%M:%SZ')
+
+                    if last_check_time is None or published_time > last_check_time:
+                        bot.send_message(user_id, f"{article['title']}\n{article['link']}")
+
+        save_last_check_time(datetime.utcnow())
+        time.sleep(300)  # Проверяем каждые 5 минут
 
 
 if __name__ == '__main__':
     from threading import Thread
     Thread(target=check_rss_feeds).start()  # Запускаем проверку в отдельном потоке
-    bot.polling(none_stop=True, interval=0)
+    try:
+        bot.polling(none_stop=True)
+    finally:
+        db.close()  # Закрываем соединение с базой данных

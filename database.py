@@ -1,32 +1,130 @@
+import mysql.connector
 import json
-import os
+from mysql.connector import Error
+
 
 class Database:
-    def __init__(self, path):
-        self.path = path
-        self.load()
+    def __init__(self, host, user, password, database):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.database = database
+        self.connection = self.connect()
 
-    def load(self):
-        if os.path.exists(self.path):
-            with open(self.path, 'r') as file:
-                self.data = json.load(file)
-        else:
-            self.data = {}
-
-    def save(self):
-        with open(self.path, 'w') as file:
-            json.dump(self.data, file)
+    def connect(self):
+        try:
+            connection = mysql.connector.connect(
+                host=self.host,
+                user=self.user,
+                password=self.password,
+                database=self.database
+            )
+            if connection.is_connected():
+                print("Успешное подключение к базе данных")
+                return connection
+        except Error as e:
+            print(f"Ошибка при подключении к базе данных: {e}")
+            return None
 
     def add_channel(self, user_id, channel_url):
-        if user_id not in self.data:
-            self.data[user_id] = []
-        self.data[user_id].append(channel_url)
-        self.save()
+        cursor = self.connection.cursor()
+        try:
+            # Проверяем, есть ли пользователь в базе данных
+            query_check_user = "SELECT idTelegram FROM Users WHERE idTelegram = %s"
+            cursor.execute(query_check_user, (user_id,))
+            result = cursor.fetchone()
+
+            if result:
+                # Если пользователь существует, обновляем его каналы
+                query_update = """
+                    UPDATE Users
+                    SET channels = JSON_ARRAY_APPEND(channels, '$', %s)
+                    WHERE idTelegram = %s
+                """
+                cursor.execute(query_update, (channel_url, user_id))
+            else:
+                # Если пользователя нет, создаем новую запись
+                query_insert = """
+                    INSERT INTO Users (idTelegram, channels)
+                    VALUES (%s, JSON_ARRAY(%s))
+                """
+                cursor.execute(query_insert, (user_id, channel_url))
+
+            self.connection.commit()
+        except Exception as e:
+            print(f"Ошибка при добавлении канала: {e}")
+        finally:
+            cursor.close()
 
     def get_channels(self, user_id):
-        return self.data.get(user_id, [])
+        cursor = self.connection.cursor()
+        try:
+            query = "SELECT JSON_UNQUOTE(channels) FROM Users WHERE idTelegram = %s"
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+
+            if result:
+                channels_json = result[0]
+                channels = json.loads(channels_json)
+                return channels
+            return []
+        except Exception as e:
+            print(f"Ошибка при получении каналов пользователя: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    def get_all_users_and_channels(self):
+        cursor = self.connection.cursor()
+        try:
+            query = """
+            SELECT idTelegram, JSON_UNQUOTE(channels) as channels 
+            FROM Users
+            WHERE JSON_LENGTH(channels) > 0
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+
+            # Преобразуем JSON-каналы в Python список для каждого пользователя
+            users_and_channels = []
+            for row in result:
+                user_id = row[0]
+                channels_json = row[1]
+                channels = json.loads(channels_json)  # Конвертируем JSON строку в список
+                users_and_channels.append((user_id, channels))
+
+            return users_and_channels
+        except Exception as e:
+            print(f"Ошибка при получении пользователей и каналов: {e}")
+            return []
+        finally:
+            cursor.close()
 
     def remove_channel(self, user_id, channel_url):
-        if user_id in self.data and channel_url in self.data[user_id]:
-            self.data[user_id].remove(channel_url)
-            self.save()
+        cursor = self.connection.cursor()
+        try:
+            # Получаем текущие каналы пользователя
+            channels = self.get_channels(user_id)
+
+            if channel_url in channels:
+                # Удаляем канал из списка
+                channels.remove(channel_url)
+
+                # Обновляем поле JSON в базе данных
+                query_update = """
+                    UPDATE Users
+                    SET channels = %s
+                    WHERE idTelegram = %s
+                """
+                new_channels_json = json.dumps(channels)
+                cursor.execute(query_update, (new_channels_json, user_id))
+                self.connection.commit()
+        except Exception as e:
+            print(f"Ошибка при удалении канала: {e}")
+        finally:
+            cursor.close()
+
+    def close(self):
+        if self.connection.is_connected():
+            self.connection.close()
+            print("Подключение к базе данных закрыто")
