@@ -108,7 +108,6 @@ class Database:
             channels = self.get_channels(user_id)
 
             if channel_url in channels:
-                # Удаляем канал из списка
                 channels.remove(channel_url)
 
                 # Обновляем поле JSON в базе данных
