@@ -1,6 +1,7 @@
 import mysql.connector
 import json
 from mysql.connector import Error
+from datetime import datetime
 
 
 class Database:
@@ -17,7 +18,7 @@ class Database:
                 host=self.host,
                 user=self.user,
                 password=self.password,
-                database=self.database
+                database=self.database,
             )
             if connection.is_connected():
                 print("Успешное подключение к базе данных")
@@ -123,6 +124,34 @@ class Database:
             print(f"Ошибка при удалении канала: {e}")
         finally:
             cursor.close()
+
+    def get_last_sent_time(self, user_id, channel_url):
+        with self.connection.cursor() as cursor:
+            query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+            if result and result[0]:
+                last_sent_time = json.loads(result[0])
+                return last_sent_time.get(channel_url)
+            return None
+
+    def update_last_sent_time(self, user_id, channel_url):
+        with self.connection.cursor() as cursor:
+            query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
+            cursor.execute(query, (user_id,))
+            result = cursor.fetchone()
+
+            if result and result[0]:
+                last_sent_time = json.loads(result[0])
+            else:
+                last_sent_time = {}
+
+            # Обновляем время для конкретного канала
+            last_sent_time[channel_url] = datetime.utcnow().isoformat()
+
+            query = "UPDATE Users SET last_sent_time = %s WHERE idTelegram = %s"
+            cursor.execute(query, (json.dumps(last_sent_time), user_id))
+            self.connection.commit()
 
     def close(self):
         if self.connection.is_connected():
