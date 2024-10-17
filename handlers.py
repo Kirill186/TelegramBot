@@ -78,9 +78,7 @@ def get_rss(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('get_rss_'))
 def send_rss(call):
     channel_url = call.data.split('_', 2)[2]  # Извлекаем URL канала
-    print(f"Извлеченный URL канала: {channel_url}")
     articles = get_rss_feed(channel_url)  # Получаем статьи из RSS
-    print(f"Полученные статьи: {articles}")
 
     if articles:
         for article in articles:

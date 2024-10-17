@@ -5,6 +5,7 @@ import requests
 def get_rss_feed(channel):
     try:
         response = requests.get(channel)
+        print(f"trying: {channel}")
         response.raise_for_status()  # Проверяем, что запрос успешен
         print(f"Успешный запрос к каналу: {channel}")
         feed = feedparser.parse(response.content)
