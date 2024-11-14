@@ -1,7 +1,7 @@
+from handlers import db, bot
 import time
 from datetime import datetime
 from rss_reader import get_rss_feed
-from handlers import bot, db
 
 
 def check_rss_feeds():
@@ -25,7 +25,7 @@ def check_rss_feeds():
                         new_articles.append(article)
 
                 for article in new_articles:
-                    bot.send_message(user_id, f"{article['title']}\n{article['link']}")
+                    bot.send_message(user_id, f"{article['link']}")
 
                 if new_articles:
                     db.update_last_sent_time(user_id, channel)
@@ -35,8 +35,8 @@ def check_rss_feeds():
 
 if __name__ == '__main__':
     from threading import Thread
-    Thread(target=check_rss_feeds).start()  # Запускаем проверку в отдельном потоке
+    Thread(target=check_rss_feeds).start()
     try:
         bot.polling(none_stop=True)
     finally:
-        db.close()  # Закрываем соединение с базой данных
+        db.close()

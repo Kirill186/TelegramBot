@@ -2,6 +2,7 @@ import mysql.connector
 import json
 from mysql.connector import Error
 from datetime import datetime
+from rss_reader import get_rss_feed, RSSFetchError
 
 
 class Database:
@@ -27,33 +28,34 @@ class Database:
             print(f"Ошибка при подключении к базе данных: {e}")
             return None
 
-    def add_channel(self, user_id, channel_url):
+    def add_channel(self, user_id, channel):
         cursor = self.connection.cursor()
         try:
+            get_rss_feed(channel)
+
             # Проверяем, есть ли пользователь в базе данных
             query_check_user = "SELECT idTelegram FROM Users WHERE idTelegram = %s"
             cursor.execute(query_check_user, (user_id,))
             result = cursor.fetchone()
 
             if result:
-                # Если пользователь существует, обновляем его каналы
                 query_update = """
                     UPDATE Users
                     SET channels = JSON_ARRAY_APPEND(channels, '$', %s)
                     WHERE idTelegram = %s
                 """
-                cursor.execute(query_update, (channel_url, user_id))
+                cursor.execute(query_update, (channel, user_id))
             else:
-                # Если пользователя нет, создаем новую запись
                 query_insert = """
                     INSERT INTO Users (idTelegram, channels)
                     VALUES (%s, JSON_ARRAY(%s))
                 """
-                cursor.execute(query_insert, (user_id, channel_url))
+                cursor.execute(query_insert, (user_id, channel))
 
             self.connection.commit()
         except Exception as e:
             print(f"Ошибка при добавлении канала: {e}")
+            raise RSSFetchError(f"Не удалось получить статьи с канала {channel}")
         finally:
             cursor.close()
 
@@ -101,14 +103,13 @@ class Database:
         finally:
             cursor.close()
 
-    def remove_channel(self, user_id, channel_url):
+    def remove_channel(self, user_id, channel):
         cursor = self.connection.cursor()
         try:
-            # Получаем текущие каналы пользователя
             channels = self.get_channels(user_id)
 
-            if channel_url in channels:
-                channels.remove(channel_url)
+            if channel in channels:
+                channels.remove(channel)
 
                 # Обновляем поле JSON в базе данных
                 query_update = """
@@ -124,17 +125,17 @@ class Database:
         finally:
             cursor.close()
 
-    def get_last_sent_time(self, user_id, channel_url):
+    def get_last_sent_time(self, user_id, channel):
         with self.connection.cursor() as cursor:
             query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
             cursor.execute(query, (user_id,))
             result = cursor.fetchone()
             if result and result[0]:
                 last_sent_time = json.loads(result[0])
-                return last_sent_time.get(channel_url)
+                return last_sent_time.get(channel)
             return None
 
-    def update_last_sent_time(self, user_id, channel_url):
+    def update_last_sent_time(self, user_id, channel):
         with self.connection.cursor() as cursor:
             query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
             cursor.execute(query, (user_id,))
@@ -145,8 +146,7 @@ class Database:
             else:
                 last_sent_time = {}
 
-            # Обновляем время для конкретного канала
-            last_sent_time[channel_url] = datetime.utcnow().isoformat()
+            last_sent_time[channel] = datetime.utcnow().isoformat()
 
             query = "UPDATE Users SET last_sent_time = %s WHERE idTelegram = %s"
             cursor.execute(query, (json.dumps(last_sent_time), user_id))
