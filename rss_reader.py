@@ -4,6 +4,7 @@ import requests
 
 def get_rss_feed(channel):
     try:
+        channel = "https://rsshub.app/telegram/channel/"+channel
         response = requests.get(channel)
         print(f"trying: {channel}")
         response.raise_for_status()  # Проверяем, что запрос успешен

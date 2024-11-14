@@ -12,7 +12,8 @@ def check_rss_feeds():
         for user_id, channels in users:
             for channel in channels:
                 last_sent_time = db.get_last_sent_time(user_id, channel)
-                articles = get_rss_feed(channel)  # Получаем RSS-ленту для канала
+                articles = []
+                # articles = get_rss_feed(channel)  # Получаем RSS-ленту для канала
 
                 new_articles = []
 
