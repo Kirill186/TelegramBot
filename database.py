@@ -1,158 +1,115 @@
-import mysql.connector
-import json
-from mysql.connector import Error
+from sqlalchemy import create_engine, Column, Integer, JSON
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from rss_reader import get_rss_feed, RSSFetchError
+
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    idTelegram = Column(Integer, unique=True, nullable=False)
+    channels = Column(JSON, nullable=False, default=[])
+    last_sent_time = Column(JSON, nullable=True)
 
 
 class Database:
-    def __init__(self, host, user, password, database):
-        self.host = host
-        self.user = user
-        self.password = password
-        self.database = database
-        self.connection = self.connect()
-
-    def connect(self):
-        try:
-            connection = mysql.connector.connect(
-                host=self.host,
-                user=self.user,
-                password=self.password,
-                database=self.database,
-            )
-            if connection.is_connected():
-                print("Успешное подключение к базе данных")
-                return connection
-        except Error as e:
-            print(f"Ошибка при подключении к базе данных: {e}")
-            return None
+    def __init__(self, db_path="sqlite:///rss_bot.db"):
+        self.engine = create_engine(db_path)
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine)
 
     def add_channel(self, user_id, channel):
-        cursor = self.connection.cursor()
+        session = self.Session()
         try:
-            get_rss_feed(channel)
 
-            # Проверяем, есть ли пользователь в базе данных
-            query_check_user = "SELECT idTelegram FROM Users WHERE idTelegram = %s"
-            cursor.execute(query_check_user, (user_id,))
-            result = cursor.fetchone()
+            user = session.query(User).filter_by(idTelegram=user_id).first()
+            if not user:
+                user = User(idTelegram=user_id, channels=[], last_sent_time={})
+                session.add(user)
 
-            if result:
-                query_update = """
-                    UPDATE Users
-                    SET channels = JSON_ARRAY_APPEND(channels, '$', %s)
-                    WHERE idTelegram = %s
-                """
-                cursor.execute(query_update, (channel, user_id))
+            if channel not in user.channels:
+                user.channels.append(channel)
+                session.commit()
             else:
-                query_insert = """
-                    INSERT INTO Users (idTelegram, channels)
-                    VALUES (%s, JSON_ARRAY(%s))
-                """
-                cursor.execute(query_insert, (user_id, channel))
-
-            self.connection.commit()
+                raise ValueError(f"Канал {channel} уже добавлен.")
         except Exception as e:
             print(f"Ошибка при добавлении канала: {e}")
-            raise RSSFetchError(f"Не удалось получить статьи с канала {channel}")
+            session.rollback()
+            raise
         finally:
-            cursor.close()
+            session.close()
 
     def get_channels(self, user_id):
-        cursor = self.connection.cursor()
+        session = self.Session()
         try:
-            query = "SELECT JSON_UNQUOTE(channels) FROM Users WHERE idTelegram = %s"
-            cursor.execute(query, (user_id,))
-            result = cursor.fetchone()
-
-            if result:
-                channels_json = result[0]
-                channels = json.loads(channels_json)
-                return channels
+            user = session.query(User).filter_by(idTelegram=user_id).first()
+            if user:
+                return user.channels
             return []
         except Exception as e:
             print(f"Ошибка при получении каналов пользователя: {e}")
             return []
         finally:
-            cursor.close()
+            session.close()
 
     def get_all_users_and_channels(self):
-        cursor = self.connection.cursor()
+        session = self.Session()
         try:
-            query = """
-            SELECT idTelegram, JSON_UNQUOTE(channels) as channels 
-            FROM Users
-            WHERE JSON_LENGTH(channels) > 0
-            """
-            cursor.execute(query)
-            result = cursor.fetchall()
-
-            # Преобразуем JSON-каналы в Python список для каждого пользователя
-            users_and_channels = []
-            for row in result:
-                user_id = row[0]
-                channels_json = row[1]
-                channels = json.loads(channels_json)  # Конвертируем JSON строку в список
-                users_and_channels.append((user_id, channels))
-
-            return users_and_channels
+            users = session.query(User).all()
+            return [(user.idTelegram, user.channels) for user in users]
         except Exception as e:
-            print(f"Ошибка при получении пользователей и каналов: {e}")
+            print(f"Ошибка при получении всех пользователей и их каналов: {e}")
             return []
         finally:
-            cursor.close()
+            session.close()
 
     def remove_channel(self, user_id, channel):
-        cursor = self.connection.cursor()
+        session = self.Session()
         try:
-            channels = self.get_channels(user_id)
-
-            if channel in channels:
-                channels.remove(channel)
-
-                # Обновляем поле JSON в базе данных
-                query_update = """
-                    UPDATE Users
-                    SET channels = %s
-                    WHERE idTelegram = %s
-                """
-                new_channels_json = json.dumps(channels)
-                cursor.execute(query_update, (new_channels_json, user_id))
-                self.connection.commit()
+            user = session.query(User).filter_by(idTelegram=user_id).first()
+            if user and channel in user.channels:
+                user.channels.remove(channel)
+                session.commit()
+            else:
+                raise ValueError(f"Канал {channel} не найден у пользователя.")
         except Exception as e:
             print(f"Ошибка при удалении канала: {e}")
+            session.rollback()
         finally:
-            cursor.close()
+            session.close()
 
     def get_last_sent_time(self, user_id, channel):
-        with self.connection.cursor() as cursor:
-            query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
-            cursor.execute(query, (user_id,))
-            result = cursor.fetchone()
-            if result and result[0]:
-                last_sent_time = json.loads(result[0])
-                return last_sent_time.get(channel)
+        session = self.Session()
+        try:
+            user = session.query(User).filter_by(idTelegram=user_id).first()
+            if user and user.last_sent_time:
+                return user.last_sent_time.get(channel)
             return None
+        except Exception as e:
+            print(f"Ошибка при получении времени последней отправки: {e}")
+            return None
+        finally:
+            session.close()
 
     def update_last_sent_time(self, user_id, channel):
-        with self.connection.cursor() as cursor:
-            query = "SELECT last_sent_time FROM Users WHERE idTelegram = %s"
-            cursor.execute(query, (user_id,))
-            result = cursor.fetchone()
+        session = self.Session()
+        try:
+            user = session.query(User).filter_by(idTelegram=user_id).first()
+            if not user:
+                raise ValueError("Пользователь не найден.")
 
-            if result and result[0]:
-                last_sent_time = json.loads(result[0])
-            else:
-                last_sent_time = {}
+            if not user.last_sent_time:
+                user.last_sent_time = {}
 
-            last_sent_time[channel] = datetime.utcnow().isoformat()
-
-            query = "UPDATE Users SET last_sent_time = %s WHERE idTelegram = %s"
-            cursor.execute(query, (json.dumps(last_sent_time), user_id))
-            self.connection.commit()
+            user.last_sent_time[channel] = datetime.utcnow().isoformat()
+            session.commit()
+        except Exception as e:
+            print(f"Ошибка при обновлении времени последней отправки: {e}")
+            session.rollback()
+        finally:
+            session.close()
 
     def close(self):
-        if self.connection.is_connected():
-            self.connection.close()
-            print("Подключение к базе данных закрыто")
+        pass

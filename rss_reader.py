@@ -6,6 +6,7 @@ class RSSFetchError(Exception):
     """Ошибка получения RSS-канала"""
     pass
 
+
 def get_rss_feed(channel):
     try:
         channel = "https://rsshub.app/telegram/channel/"+channel
