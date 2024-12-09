@@ -12,9 +12,9 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, autoincrement=True)
     idTelegram = Column(Integer, unique=True, nullable=False)
-    channels = Column(Text, nullable=False, default='[]')  # Хранить как текст
-    last_sent_time = Column(Text, nullable=True, default='{}')  # Хранить как текст
-    filters = Column(Text, nullable=True, default='[]')  # Хранить как текст
+    channels = Column(Text, nullable=False, default='[]')
+    last_sent_time = Column(Text, nullable=True, default='{}')
+    filters = Column(Text, nullable=True, default='[]')
 
 
 class Database:
