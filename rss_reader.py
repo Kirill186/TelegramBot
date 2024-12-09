@@ -11,7 +11,7 @@ def get_rss_feed(channel):
     try:
         channel = "https://rsshub.app/telegram/channel/"+channel
         print(f"trying: {channel}")
-        response = requests.get(channel, timeout=3)
+        response = requests.get(channel, timeout=20)
         response.raise_for_status()  # Проверяем, что запрос успешен
         print(f"Успешный запрос к каналу: {channel}")
         feed = feedparser.parse(response.content)
@@ -27,6 +27,6 @@ def get_rss_feed(channel):
 
     except requests.exceptions.RequestException as e:
         print(f"Ошибка при запросе RSS-ленты: {e}")
-        raise RSSFetchError(f"Ошибка при запросе RSS-ленты: {e}")
+
 
 
