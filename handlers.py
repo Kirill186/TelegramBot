@@ -112,13 +112,15 @@ def channels_list(message):
 def send_rss(call):
     user_id = call.message.chat.id
     channel = call.data.split('_', 2)[2]
-
+    filters = db.get_filters(user_id)
     articles = get_rss_feed(channel)
 
     if articles:
         for article in articles:
-            bot.send_message(call.message.chat.id, f"{article['link']}")
-            db.update_last_sent_time(user_id, channel)
+            # Проверяем на наличие стоп-слов
+            if not any(word.lower() in article['title'].lower() for word in filters):
+                bot.send_message(call.message.chat.id, f"{article['link']}")
+        db.update_last_sent_time(user_id, channel)
 
     else:
         bot.send_message(call.message.chat.id, "Нет доступных статей в этом канале.")
