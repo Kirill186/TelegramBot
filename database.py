@@ -69,7 +69,15 @@ class Database:
         session = self.Session()
         try:
             users = session.query(User).all()
-            return [(user.idTelegram, user.channels) for user in users]
+            result = []
+            for user in users:
+                try:
+                    channels = json.loads(user.channels)  # Преобразование JSON-строки в список
+                except json.JSONDecodeError:
+                    print(f"Ошибка декодирования JSON для пользователя {user.idTelegram}")
+                    channels = []
+                result.append((user.idTelegram, channels))
+            return result
         except Exception as e:
             print(f"Ошибка при получении всех пользователей и их каналов: {e}")
             return []
